@@ -1,139 +1,61 @@
 ```R
-# Source the necessary libraries
-library(org.Mm.eg.db)
-library(org.Hs.eg.db)
-
 # Import the data
 load("Data/3T3.R")
 
-# Import functions for RSA analysis
-source("Data/OPI_Functions.R")
-
-## Process raw data
-# Import the lists of transcription factors
+# Import the list of GO terms and transcription factors
+GO <- read.delim("Data/FatCell_GO.txt", header=TRUE, stringsAsFactors=FALSE)
 TFs <- read.table("Data/TFs.txt", quote="\"", comment.char="")
 MotifToFactor <- read.delim("Data/Genename_Motif.txt", header=FALSE)
 
-# Collaps hits
+## Make groups of transcription factors based on expression patterns
+# All expressed
+Expressed <- data.frame(Factor = TFs[ TFs[,1] %in% GeneRPKM[ GeneRPKM$Max >= 0,"Factor"],])
+Expressed <- data.frame(Factor = Expressed[ duplicated(Expressed$Factor)==F,])
+
+# Regulated during differentiation
+ExpressedRegulated <- data.frame(Factor = TFs[ TFs[,1] %in% GeneRPKM[ GeneRPKM$Max >= 0 & ((GeneRPKM$`FDR_Cond3-vs-Cond2` <= 0.05) | (GeneRPKM$`FDR_Cond4-vs-Cond2` <= 0.05) | (GeneRPKM$`FDR_Cond4-vs-Cond3` <= 0.05) | (GeneRPKM$`FDR_Cond4-vs-Cond1` <= 0.05)  | (GeneRPKM$`FDR_Cond3-vs-Cond1` <= 0.05)  | (GeneRPKM$`FDR_Cond2-vs-Cond1` <= 0.05)),"Factor"],])
+
+## Make groups of transcription factors based on motif enrichments
+MotifsAll <- read.delim("Data/All_knownResults.txt")
+MotifsAll <- MotifsAll[ MotifsAll[,3] <= 0.05, ]
+MotifsAll <- merge(MotifsAll, MotifToFactor, by.x="Motif.Name", by.y="V2")
+MotifsAll <- MotifsAll[ duplicated(MotifsAll$V1)==F,]
+
+MotifsInd <- read.delim("Data/Induced_knownResults.txt")
+MotifsInd <- MotifsInd[ MotifsInd[,3] <= 0.05, c(1:5)]
+MotifsRep <- read.delim("Data/Repressed_knownResults.txt")
+MotifsRep <- MotifsRep[ MotifsRep[,3] <= 0.05, c(1:5)]
+MotifsRegulated <- rbind(MotifsInd,MotifsRep)
+MotifsRegulated <- merge(MotifsRegulated, MotifToFactor, by.x="Motif.Name", by.y="V2")
+MotifsRegulated <- MotifsRegulated[ duplicated(MotifsRegulated$V1)==F,]
+
+## Make groups based on combinations of motifs and expression
+Combined <- MotifsRegulated[ MotifsRegulated$V1 %in% ExpressedRegulated$Factor,]
+
+## Collaps hits
 Hits <- Result[ Result$CausalTF == 1,]
 Hits <- Hits[ duplicated(Hits$Factor)==F,]
 
-## Import the ISMARA results (All with Z >= 2)
-MARA <- read.delim("Data/ISMARA", header=F)
-MARA[,1] <- toupper(MARA[,1])
-MARA <- MARA[ MARA$V1 %in% TFs$V1,]
-MARA <- MARA[ duplicated(MARA[,1]) == F,]
+# Calculate enrichment for different groups and store in a matrix
+Enrichment <- data.frame(Fraction = matrix(ncol=2,nrow=7))
+Enrichment[1,1] <- nrow(Hits[ Hits$Factor %in% GO$Factor,])
+Enrichment[1,2] <- nrow(Hits)
+Enrichment[2,1] <- nrow(Combined[ Combined$V1 %in% GO$Factor,])
+Enrichment[2,2] <- nrow(Combined)
+Enrichment[3,1] <- nrow(MotifsRegulated[ MotifsRegulated$V1 %in% GO$Factor,])
+Enrichment[3,2] <- nrow(MotifsRegulated)
+Enrichment[4,1] <- nrow(MotifsAll[ MotifsAll$V1 %in% GO$Factor,])
+Enrichment[4,2] <- nrow(MotifsAll)
+Enrichment[5,1] <- length(ExpressedRegulated[ ExpressedRegulated$Factor %in% GO$Factor,])
+Enrichment[5,2] <- nrow(ExpressedRegulated)
+Enrichment[6,1] <- length(Expressed[ Expressed$Factor %in% GO$Factor,])
+Enrichment[6,2] <- nrow(Expressed)
+Enrichment[7,1] <- length(TFs[ TFs[,1] %in% GO$Factor,])
+Enrichment[7,2] <- nrow(TFs)
 
-## Make a data frame to save the results
-Impact <- data.frame(matrix(ncol=2, nrow=15))
-
-## Process GO data
-# Import and process data
-GO <- read.delim("Data/FatCell_GO.txt", header=TRUE, stringsAsFactors=FALSE)
-
-# Save enrichments
-Impact[1,1] <- nrow(GO[ GO$Factor %in% Hits[ Hits$Pearsons >= 0.8 ,"Factor"],])
-Impact[1,2] <- nrow(Hits[ Hits$Pearsons >= 0.8 ,])
-Impact[2,1] <- nrow(GO[ GO$Factor %in% Hits$Factor,])
-Impact[2,2] <- nrow(Hits)
-Impact[3,1] <- nrow(GO[ GO$Factor %in% MARA[ MARA$V2 >= 0.8,"V1"],])
-Impact[3,2] <- nrow(MARA[ MARA$V2 >= 0.8,])
-Impact[4,1] <- nrow(GO[ GO$Factor %in% MARA$V1,])
-Impact[4,2] <- nrow(MARA)
-Impact[5,1] <- nrow(GO[ GO$Factor %in% TFs$V1,])
-Impact[5,2] <- nrow(TFs)
-
-## Overexpression screen
-# Import and process data
-Convert <- read.delim("Data/Mouse_Human.txt", stringsAsFactors=FALSE)
-Screen <- read.delim("Data/Screen.txt", header=TRUE, stringsAsFactors=FALSE)
-Factors <- read.table("Data/ScreenedFactors.txt", quote="\"", comment.char="")
-colnames(Convert) <- c("Ensembl_Mouse","Ensembl_Human")
-Conv1 <- as.data.frame(org.Hs.egENSEMBL)
-Conv2 <- as.data.frame(org.Hs.egSYMBOL)
-Conv <- merge(Conv1, Conv2, by="gene_id")
-colnames(Conv) <- c("GeneID","Ensembl_Human","Symbol_Human")
-Convert <- merge(Convert, Conv[,c(2,3)], by="Ensembl_Human")
-Conv1 <- as.data.frame(org.Mm.egENSEMBL)
-Conv2 <- as.data.frame(org.Mm.egSYMBOL)
-Conv <- merge(Conv1, Conv2, by="gene_id")
-colnames(Conv) <- c("GeneID","Ensembl_Mouse","Symbol_Mouse")
-Convert <- merge(Convert, Conv[,c(2,3)], by="Ensembl_Mouse")
-Screen <- merge(Screen, Convert[,c(3,4)], by.x="Gene", by.y="Symbol_Mouse")
-Screen <- Screen[ duplicated(Screen$Symbol_Human)==F,]
-Screen <- Screen[ (Screen$Pvalue1 <= 0.05 & Screen$Pvalue2 <= 0.05) | (Screen$Pvalue1 <= 0.05 & Screen$Pvalue3 <= 0.05)| (Screen$Pvalue3 <= 0.05 & Screen$Pvalue2 <= 0.05), ]
-Factors <- merge(Factors, Convert[,c(3,4)], by.x="V1", by.y="Symbol_Mouse")
-Factors <- Factors[ duplicated(Factors$Symbol_Human)==F,]
-rm(Conv1)
-rm(Conv2)
-rm(Conv)
-rm(Convert)
-
-# Save enrichments
-Impact[6,1] <- nrow(Screen[ Screen$Symbol_Human %in% Hits[ Hits$Pearsons >= 0.8, "Factor"],])
-Impact[6,2] <- nrow(Factors[ Factors$Symbol_Human %in% Hits[ Hits$Pearsons >= 0.8, "Factor"],])
-Impact[7,1] <- nrow(Screen[ Screen$Symbol_Human %in% Hits[ , "Factor"],])
-Impact[7,2] <- nrow(Factors[ Factors$Symbol_Human %in% Hits[ , "Factor"],])
-Impact[8,1] <- nrow(Screen[ Screen$Symbol_Human %in% MARA[ MARA$V2 >= 0.8, "V1"],])
-Impact[8,2] <- nrow(Factors[ Factors$Symbol_Human %in% MARA[ MARA$V2 >= 0.8, "V1"],])
-Impact[9,1] <- nrow(Screen[ Screen$Symbol_Human %in% MARA[ , "V1"],])
-Impact[9,2] <- nrow(Factors[ Factors$Symbol_Human %in% MARA[ , "V1"],])
-Impact[10,1] <- nrow(Screen[ Screen$Symbol_Human %in% TFs$V1,])
-Impact[10,2] <- nrow(Factors[ Factors$Symbol_Human %in% TFs$V1,])
-
-## Knockdown screen
-# Import and process data
-Screen <- read.delim("Data/WinnefeldScreen.txt")
-Screen <- Screen[ Screen$GeneSymbol %in% TFs$V1,]
-opts = list(LB=0.8,UB=1.96,outputFile="RSA_out",inputFile=NA,reverse=TRUE,bonferroni=1);
-t = data.frame(Gene_ID = Screen$GeneSymbol, Well_ID = Screen$well, Score = Screen$score)
-reverse = OPI(t$Gene_ID,t$Score,opts,t)
-reverse$Induce <- 0
-reverse[ reverse$OPI_Hit == 1 & reverse$`#hitWell` >= 2, "Induce"] <- 1
-reverse <- reverse[ duplicated(reverse$Gene_ID)==F,]
-t = data.frame(Gene_ID = Screen$GeneSymbol, Well_ID = Screen$well, Score = -1*Screen$score)
-forward = OPI(t$Gene_ID,t$Score,opts,t)
-forward$Repress <- 0
-forward[ forward$OPI_Hit == 1 & forward$`#hitWell` >= 2, "Repress"] <- 1
-forward <- forward[ duplicated(forward$Gene_ID)==F,]
-ResultScreen <- merge(forward[,c("Gene_ID","Repress")], reverse[,c("Gene_ID","Induce")], by="Gene_ID")
-colnames(ResultScreen)[1] <- "Factor"
-ResultScreen$Hit <- 0
-ResultScreen[ ResultScreen$Repress == 1 | ResultScreen$Induce == 1, "Hit"] <- 1
-
-# Save enrichments
-Impact[11,1] <- nrow(ResultScreen[ ResultScreen$Factor %in% Hits[ Hits$Pearsons >= 0.8, "Factor"] & ResultScreen$Hit == 1,])
-Impact[11,2] <- nrow(ResultScreen[ ResultScreen$Factor %in% Hits[ Hits$Pearsons >= 0.8, "Factor"],])
-Impact[12,1] <- nrow(ResultScreen[ ResultScreen$Factor %in% Hits[ , "Factor"] & ResultScreen$Hit == 1,])
-Impact[12,2] <- nrow(ResultScreen[ ResultScreen$Factor %in% Hits[ , "Factor"],])
-Impact[13,1] <- nrow(ResultScreen[ ResultScreen$Factor %in% MARA[ MARA$V2 >= 0.8, "V1"] & ResultScreen$Hit == 1,])
-Impact[13,2] <- nrow(ResultScreen[ ResultScreen$Factor %in% MARA[ MARA$V2 >= 0.8, "V1"],])
-Impact[14,1] <- nrow(ResultScreen[ ResultScreen$Factor %in% MARA[ , "V1"] & ResultScreen$Hit == 1,])
-Impact[14,2] <- nrow(ResultScreen[ ResultScreen$Factor %in% MARA[ , "V1"],])
-Impact[15,1] <- nrow(ResultScreen[ ResultScreen$Factor %in% TFs$V1 & ResultScreen$Hit == 1,])
-Impact[15,2] <- nrow(ResultScreen[ ResultScreen$Factor %in% TFs$V1,])
-
-## Process all enrichments and plot it
-# Calculate enrichments
-Impact[,3] <- Impact[,1] / Impact[,2]
-for (i in 1:4) { Impact[i,3] <- Impact[i,3] / Impact[5,3] }
-for (i in 6:9) { Impact[i,3] <- Impact[i,3] / Impact[10,3] }
-for (i in 11:14) { Impact[i,3] <- Impact[i,3] / Impact[15,3] }
-Impact[,3] <- log2(Impact[,3])
-
-# Make the plots
-par(mfcol=c(1,3))
-barplot(Impact[c(1,3,2,4),3], las=2, ylab="Log2 enrichment", names=c("IMAGE","MARA","IMAGE","MARA"), main="Gene ontology", col=c("green","orange", "green","orange"))
-mtext("Correlating", at = 1.25, side=1, line=2.5)
-mtext("All", at = 3.75, side=1, line=2.5)
-
-barplot(Impact[c(6,8,7,9),3], las=2, ylab="Log2 enrichment", names=c("IMAGE","MARA","IMAGE","MARA"), main="Overexpression screen", col=c("green","orange", "green","orange"))
-mtext("Correlating", at = 1.25, side=1, line=2.5)
-mtext("All", at = 3.75, side=1, line=2.5)
-
-barplot(Impact[c(11,13,12,14),3], las=2, ylab="Log2 enrichment", names=c("IMAGE","MARA","IMAGE","MARA"), main="Knockdown screen", col=c("green","orange", "green","orange"))
-mtext("Correlating", at = 1.25, side=1, line=2.5)
-mtext("All", at = 3.75, side=1, line=2.5)
+# Plot it
+par(mfcol=c(1,1))
+barplot(Enrichment[,1]/Enrichment[,2], las=2, ylim=c(0,0.2), ylab="Precision", names=c("IMAGE","dMotif+dExprs","Dynamic motifs","All motifs","Dynamic expression","All expressed","All TFs"), col=c("green","purple","red","pink","blue","lightblue","grey"))
 ```
 
 [Back to start](../README.md)<br>

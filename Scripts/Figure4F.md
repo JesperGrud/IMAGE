@@ -2,6 +2,7 @@
 # Source the necessary libaries
 library(org.Mm.eg.db)
 library(org.Hs.eg.db)
+library(GenomicRanges)
 
 # Import the data
 load("Data/3T3.R")
@@ -37,70 +38,110 @@ rm(Conv2)
 rm(Conv)
 rm(Convert)
 
-# Import ChIP-seq data and define target genes
+## Setup to capture results
+MeanDF <- data.frame(matrix(ncol=2, nrow=2))
+SDDF <- data.frame(matrix(ncol=2, nrow=2))
+
+## IMAGE
+# Setup up to run it
+Targets <- Target_Genes$PPARG_3.motif
+NumberTargets <- nrow(Targets[ Targets$Target == 1,])
+
+Genes <- Test
+Genes$Top <- 0
+Genes[ (Genes$Control_FDR <= 0.01 & Genes$Control_logFC > 0 & Genes$Control_logFC -1 >= (Genes$KD_logFC)) | (Genes$Control_FDR <= 0.01 & Genes$Control_logFC < 0 & (Genes$Control_logFC + 1) <= (Genes$KD_logFC)) ,"Top"] <- 1
+Genes <- Genes[ order(Genes$Symbol_Human, -Genes$Top),]
+Genes <- Genes[ duplicated(Genes$Symbol_Human)==F,]
+
+# Calculate the precision
+Precision <- nrow(Targets[ Targets$Target == 1 & Targets$Factor %in% Genes[ Genes$Top == 1,"Symbol_Human"],])/nrow(Genes[ Genes$Top == 1,])
+
+# Randomize the targets, find overlap with significant genes
+RandomTargets <- data.frame(matrix(ncol=1, nrow=1000))
+for (m in 1:1000) {
+	Targets$Random <- 0
+	Targets[ sample(1:nrow(Targets), NumberTargets),"Random"] <- 1
+	RandomTargets[m,1] <- nrow(Targets[ Targets$Random == 1 & Targets$Factor %in% Genes[ Genes$Top == 1,"Symbol_Human"],])/nrow(Genes[ Genes$Top == 1,])
+	}
+
+# Randomize both groups for IMAGE
+Randomized <- data.frame(matrix(ncol=1, nrow=1000))
+for (q in 1:1000) {
+	Genes$Random <- 0
+	Genes[ sample(1:nrow(Genes),nrow(Genes[ Genes$Top == 1,])),"Random"] <- 1
+	Targets$Random <- 0
+	Targets[ sample(1:nrow(Targets), NumberTargets),"Random"] <- 1
+	Randomized[q,1] <- nrow(Targets[ Targets$Random == 1 & Targets$Factor %in% Genes[ Genes$Random == 1,"Symbol_Human"],])/nrow(Genes[ Genes$Random == 1,])
+	}
+
+# Save the results	
+MeanDF[1,] <- c(mean(Precision/Randomized[,1]), mean(mean(RandomTargets[,1])/Randomized[,1]))
+SDDF[1,] <- c(sd(Precision/Randomized[,1]), sd(mean(RandomTargets[,1])/Randomized[,1]))
+
+## PPARG ChIP
+# Import ChIP-seq data
 PPAR <- read.table("Data/PPARG.pos", quote="\"", stringsAsFactors=FALSE)
-PPAR <- PPAR[ PPAR$V11 >= 10,]
 PeakGRange <- GRanges(seqnames = PPAR$V2, IRanges(start = PPAR$V3, end = PPAR$V4), strand = PPAR$V5)
-GeneRPKM$TSS <- 0
-for (i in 1:nrow(GeneRPKM)) { if (GeneRPKM[i,"Strand"] == "+") { GeneRPKM[i,"TSS"] <- GeneRPKM[i,"Start"] } else { GeneRPKM[i,"TSS"] <- GeneRPKM[i,"End"] }  }
-GeneRPKM$RegionStart <- GeneRPKM$TSS - 10000
-GeneRPKM$RegionEnd <- GeneRPKM$TSS + 10000
-GeneRPKM[ GeneRPKM$RegionStart < 0 , "RegionStart"] <- 0
-GeneGRange <- GRanges(seqnames = GeneRPKM$Chr, IRanges(start = GeneRPKM$RegionStart, end = GeneRPKM$RegionEnd), strand = rep("+", nrow(GeneRPKM)))
+
+# Import TSS and convert
+TSS <- read.delim("Data/mm9.tss", header=F)
+Convert <- read.delim("Data/Mouse_Human.txt", stringsAsFactors=FALSE)
+colnames(Convert) <- c("Ensembl_Mouse","Ensembl_Human")
+Conv1 <- as.data.frame(org.Mm.egREFSEQ)
+Conv2 <- as.data.frame(org.Mm.egENSEMBL)
+TSS <- merge(TSS, Conv1, by.x="V1", by.y="accession")
+TSS <- merge(TSS, Conv2, by="gene_id")
+TSS <- merge(TSS, Convert, by.x="ensembl_id", by.y="Ensembl_Mouse")
+Conv1 <- as.data.frame(org.Hs.egENSEMBL)
+Conv2 <- as.data.frame(org.Hs.egSYMBOL)
+Conv <- merge(Conv1, Conv2, by="gene_id")
+colnames(Conv) <- c("GeneID","Ensembl_Human","Symbol_Human")
+TSS <- merge(TSS, Conv, by="Ensembl_Human")
+
+# Define target genes
+Size <- 25000
+TSS$V3 <- TSS$V3 - Size
+TSS$V4 <- TSS$V4 + Size
+GeneGRange <- GRanges(seqnames = TSS$V2, IRanges(start = TSS$V3, end = TSS$V4), strand = rep("+", nrow(TSS)))
 overlap <- as.data.frame(findOverlaps(GeneGRange, PeakGRange))
 overlap <- overlap[ duplicated(overlap[,1]) == F,]
-ChIPTargets <- GeneRPKM[ overlap$queryHits,]
+ChIPTargets <- TSS[ overlap$queryHits,] 
+ChIPTargets <- ChIPTargets[ duplicated(ChIPTargets$Symbol_Human)==F,]
 
-# Calculate enrichment of KD affected genes
-ResultEnrichment <- data.frame(matrix(ncol=2, nrow=6))
-Test <- Test[ Test$Control_FDR <= 0.01,]
-Affected <- Test[ (Test$Control_logFC > 0 & Test$Control_logFC -1 >= (Test$KD_logFC)) | (Test$Control_logFC < 0 & (Test$Control_logFC + 1) <= (Test$KD_logFC)) ,]
-Affected <- Affected[ duplicated(Affected$Symbol_Human)==F,]
-Prediction <- Target_Genes$PPARG_1.motif
-Predicted <- Prediction[ Prediction$Target == 1, ]
-Predicted <- Predicted[ duplicated(Predicted$Factor)==F,]
-ResultEnrichment[1,1] <- nrow(Predicted[ Predicted$Factor %in% Affected$Symbol_Human,])
-ResultEnrichment[1,2] <- nrow(Predicted[ Predicted$Factor %in% Test$Symbol_Human,])
-ResultEnrichment[2,1] <- nrow(ChIPTargets[ ChIPTargets$Factor %in% Affected$Symbol_Human,])
-ResultEnrichment[2,2] <- nrow(ChIPTargets[ ChIPTargets$Factor %in% Test$Symbol_Human,])
-ResultEnrichment[6,1] <- nrow(Prediction[ Prediction$Factor %in% Affected$Symbol_Human,])
-ResultEnrichment[6,2] <- nrow(Prediction[ Prediction$Factor %in% Test$Symbol_Human,])
+# Find the precision
+Precision <- nrow(Targets[ Targets$Target == 1 & Targets$Factor %in% ChIPTargets$Symbol_Human,])/nrow(ChIPTargets)
 
-# Perform 1000 permutations of random selection (both random genes, random TFs, and random enhancers)
-Randomize <- data.frame(matrix(ncol=6, nrow=1000))
-for (i in 1:1000) {
-# Random prediction
-Random <- Prediction[ sample(1:nrow(Prediction),nrow(Predicted)),]
-Randomize[i,1] <- nrow(Random[ Random$Factor %in% Affected$Symbol_Human,])
-Randomize[i,2] <- nrow(Random[ Random$Factor %in% Test$Symbol_Human,])
-# Random TF
-Random <- Target_Genes[[sample(1:length(Target_Genes),1)]]
-Random <- Random[ Random$Target == 1,]
-Randomize[i,3] <- nrow(Random[ Random$Factor %in% Affected$Symbol_Human,])
-Randomize[i,4] <- nrow(Random[ Random$Factor %in% Test$Symbol_Human,])
-# Random enhancers
-RandoEnhancers <- Enhancers[ sample(1:nrow(Enhancers), nrow(PPAR)),]
-PeakGRange <- GRanges(seqnames = RandoEnhancers$V1, IRanges(start = RandoEnhancers$V2, end = RandoEnhancers$V3), strand = rep("+",nrow(RandoEnhancers)))
-overlap <- as.data.frame(findOverlaps(GeneGRange, PeakGRange))
-overlap <- overlap[ duplicated(overlap[,1]) == F,]
-RandoTargets <- GeneRPKM[ overlap$queryHits,]
-Randomize[i,5] <- nrow(RandoTargets[ RandoTargets$Factor %in% Affected$Symbol_Human,])
-Randomize[i,6] <- nrow(RandoTargets[ RandoTargets$Factor %in% Test$Symbol_Human,])
-}
+# Randomize the targets, find overlap with enhancers
+RandomTargets <- data.frame(matrix(ncol=1, nrow=1000))
+for (m in 1:1000) {
+	Targets$Random <- 0
+	Targets[ sample(1:nrow(Targets), NumberTargets),"Random"] <- 1
+	RandomTargets[m,1] <- nrow(Targets[ Targets$Random == 1 & Targets$Factor %in% ChIPTargets$Symbol_Human,])/nrow(ChIPTargets)
+	}
 
-ResultEnrichment[3,1] <- mean(Randomize[,3])
-ResultEnrichment[3,2] <- mean(Randomize[,4])
-ResultEnrichment[4,1] <- mean(Randomize[,1])
-ResultEnrichment[4,2] <- mean(Randomize[,2])
-ResultEnrichment[5,1] <- mean(Randomize[,5])
-ResultEnrichment[5,2] <- mean(Randomize[,6])
+# Randomize both groups for IMAGE
+Randomized <- data.frame(matrix(ncol=1, nrow=1000))
+for (q in 1:1000) {
+	Genes$Random <- 0
+	Genes[ sample(1:nrow(Genes),10000),"Random"] <- 1
+	Targets$Random <- 0
+	Targets[ sample(1:nrow(Targets), NumberTargets),"Random"] <- 1
+	Randomized[q,1] <- nrow(Targets[ Targets$Random == 1 & Targets$Factor %in% ChIPTargets$Symbol_Human,])/nrow(Genes[ Genes$Random == 1,])
+	}
+	
+# Save the results
+MeanDF[2,] <- c(mean(Precision/Randomized[,1]), mean(mean(RandomTargets[,1])/Randomized[,1]))
+SDDF[2,] <- c(sd(Precision/Randomized[,1]), sd(mean(RandomTargets[,1])/Randomized[,1]))
 
-# Calculate enrichment and make the plot
+## Plot the results
+# Setup
+MeanDF <- t(as.matrix(MeanDF))
+SDDF <- t(as.matrix(SDDF))
+
+# Plot it
 par(mfcol=c(1,1))
-ResultEnrichment[,3] <- ResultEnrichment[,1] / ResultEnrichment[,2]
-ResultEnrichment[,3] <- ResultEnrichment[,3] / ResultEnrichment[6,3]
-ResultEnrichment[,3] <- log2(ResultEnrichment[,3])
-barplot(ResultEnrichment[c(2,5,1,3,4),3], ylim=c(-0.1,1), las=1, ylab="Enrichment", col=c("blue","grey","green","grey","grey"))
+B <- barplot(log2(MeanDF), beside=T, names=c("IMAGE","Shuffled","ChIP","Shuffled"), las=2, ylab="log2 Enrichment", ylim=c(-0.1,2.5), col=c("green","grey","blue","grey"))
+arrows(B, log2(MeanDF+SDDF), B, log2(MeanDF-SDDF), code=3, angle=90, length=0.05)
 ```
 
 [Back to start](../README.md)<br>
