@@ -30,5 +30,5 @@ Supplementary figures
 
 ### Links to relavant sites
 Full-length manuscript<br>
-NCBI GEO<br>
+[NCBI GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE104537)<br>
 [Mandrup group website](http://sdu.dk/mandrupgroup)<br>
