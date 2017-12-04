@@ -12,7 +12,7 @@ The ability to predict transcription factors based on sequence information in re
 
 ### Scripts for reproduction of manuscript figures
 All figures (except those not prepared using R) in the manuscript can be reproduced from the R scripts within this repository.<br>
-To reproduce the figures locally, please clone this repository and download the data files here.<br>
+To reproduce the figures locally, please clone this repository and download the data files [here](http://bioinformatik.sdu.dk/solexa/webshare/IMAGE/IMAGE_Data.tar.gz).<br>
 Each script in markdown format (.md) can be opened in RStudio and the code chunk within backticks can be executed.<br>
 
 Main figures
@@ -29,7 +29,7 @@ Supplementary figures
 [Figure S2](Links/FigureS2.md)<br>
 
 ### Links to relavant sites
-[IMAGE download](http://bioinformatik.sdu.dk/solexa/webshare/IMAGE/IMAGE-v_1.0.tgz.gpg)<br>
+[IMAGE download](http://bioinformatik.sdu.dk/solexa/webshare/IMAGE/IMAGE_v1.1.tar.gz)<br>
 Full-length manuscript<br>
 [NCBI GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE104537)<br>
 [Mandrup group website](http://sdu.dk/mandrupgroup)<br>
