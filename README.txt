@@ -2,11 +2,12 @@
 -------		INSTALLATION 		----------
 --------------------------------------------------
 
-The IMAGE pipeline is distributed as compiled code, which means there is no 
+The IMAGE pipeline is distributed as ready-to-use code, which means there is no 
 installation per se. It is only necessary to inflate the compressed archive, 
 which you also had to do to look into this file. So congratulations on installing IMAGE.
 
-Add the IMAGE folder to $PATH for easy execution.
+Add the IMAGE folder to $PATH for easy execution. If you recieve errors or IMAGE doesn't execute,
+please ensure that IMAGE.pl and all files in the utils folder are executable on your system.
 
 --------------------------------------------------
 ------		DEPENDENCIES		----------
