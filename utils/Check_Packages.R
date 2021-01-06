@@ -31,3 +31,8 @@ cat("FALSE")
 if (is.element('GenomicRanges', installed.packages()[,1]) == F) {
 cat("FALSE")
 }
+
+
+
+
+
