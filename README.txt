@@ -24,6 +24,9 @@ within R
 Additionally, IMAGE uses HOMER (homer.salk.edu). 
 Please make sure that HOMER is installed and fully executable.
 
+Alternatively, you can use conda to quickly install all necessary dependencies 
+from the environment.txt file
+
 ---------------------------------------------------
 ------		INPUT			-----------
 ---------------------------------------------------
