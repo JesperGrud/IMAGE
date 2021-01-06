@@ -30,6 +30,6 @@ Supplementary figures
 
 ### Links to relavant sites
 [IMAGE download](http://bioinformatik.sdu.dk/solexa/webshare/IMAGE/IMAGE_v1.1.tar.gz)<br>
-Full-length manuscript<br>
+[Full-length manuscript](https://genome.cshlp.org/content/28/2/243.long)<br>
 [NCBI GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE104537)<br>
 [Mandrup group website](http://sdu.dk/mandrupgroup)<br>
